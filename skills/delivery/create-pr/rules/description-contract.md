@@ -34,7 +34,10 @@ A reviewer should read the entire description in **under 30 seconds**. Concretel
 
 If you can't fit the change inside this budget, the PR is probably too big — stop and offer the user `/create-pr --split` instead of expanding the description.
 
-**One region is exempt: the UI verification spec block.** When the PR has a `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` block (see [UI verification spec](#ui-verification-spec-optional)), everything between those markers does **not** count toward the ≤ 25 / 40 budget — it is collapsed and machine-oriented, not reviewer-facing prose.
+**Two regions are exempt.** Content between these markers does **not** count toward the ≤ 25 / 40 budget:
+
+- the UI verification spec block, `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` (see [UI verification spec](#ui-verification-spec-optional)). It is collapsed and machine-oriented, not reviewer-facing prose.
+- the visuals region, `<!-- pr-visuals:v1 -->` … `<!-- /pr-visuals:v1 -->` (see [PR visuals region](#pr-visuals-region-optional)). It holds images, not prose.
 
 ## Core principles
 
@@ -128,6 +131,16 @@ When the diff touches the UI, the PR body can carry a **collapsed, machine-finda
 **On refresh (the `review-loop` case):** carry the whole `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` region forward unchanged.
 The refresh rewrites narrative sections only; re-authoring the spec is `ui-verify author`'s job, not the refresh's.
 
+## PR visuals region (optional)
+
+`create-pr` Step 9.5 can add screenshots and a PR Lens diagram to the body, inside one region
+delimited by `<!-- pr-visuals:v1 -->` … `<!-- /pr-visuals:v1 -->`. There is at most one per PR.
+It sits immediately before the body's second `## ` heading.
+
+- **Author it only through [`pr-visuals.md`](./pr-visuals.md).** Its image URLs are GitHub-uploaded assets that cannot be recreated from the diff.
+- **It is exempt from the length budget** (see above).
+- **On refresh, carry the whole region forward unchanged**, at the same position. If a refresh drops it, the uploaded images are lost from the PR.
+
 ## Step 4: Write the title
 
 - Imperative mood, specific, under ~70 chars.
@@ -137,7 +150,7 @@ The refresh rewrites narrative sections only; re-authoring the spec is `ui-verif
 
 ## Step 5: Length self-check (before writing the body)
 
-Count the rendered lines of the body, **skipping any `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` region** — that block is exempt (see [UI verification spec](#ui-verification-spec-optional)). If the remaining body is over 25, cut. Common cuts:
+Count the rendered lines of the body, **skipping any `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` or `<!-- pr-visuals:v1 -->` … `<!-- /pr-visuals:v1 -->` region**. Both are exempt (see [Length budget](#length-budget--the-hard-rule)). If the remaining body is over 25, cut. Common cuts:
 
 - **Collapse "Notes for reviewers"** unless it flags a real risk or judgment call. "We chose X because Y" usually belongs in a code comment.
 - **Drop "internal narration"** — explanations of memo deps, useEffect timing, and other implementation detail that a reviewer will read in the diff anyway.

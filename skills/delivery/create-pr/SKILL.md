@@ -5,22 +5,23 @@ description: >
   hard ceiling 40), pushes the branch, opens the PR as a draft, then runs
   review-loop (pr-reviewer → implement-suggestion → polish simplify, up to 5
   iterations) until every review thread is resolved via fix or reply. Scale
-  down with --no-review, --no-simplify, --quick (light mechanical pass only),
-  or --no-quality (skip the loop). A post-push external-bot feedback loop
+  down with --no-review, --no-simplify, --quick (light pass), or
+  --no-quality (skip the loop). A post-push external-bot feedback loop
   runs by default (--no-feedback to skip). On a UI diff, injects a preview
   verification spec by default (--no-ui-verify to skip). Before the push,
-  converges the branch by default with review-branch, which needs no PR, so
-  the draft opens already review-clean (--no-pre-review to skip). With
-  --split, breaks the branch diff into 2–4 focused,
-  dependency-ordered draft PRs after user approval. Escalates
-  judgment-required CI failures via /confidence rather than guessing. Invoke
-  with /create-pr or /create-pr --split.
+  converges the branch by default with review-branch, so the draft opens
+  review-clean (--no-pre-review to skip). With
+  --split, breaks the branch diff into 2–4 focused, dependency-ordered draft
+  PRs after user approval. Escalates judgment-required CI failures via
+  /confidence. After CI, attaches before/after or new-feature screenshots
+  and, for cross-component diffs, a PR Lens diagram (--no-visuals to skip).
+  Invoke with /create-pr or /create-pr --split.
 disable-model-invocation: false
-argument-hint: '[--split] [--quick] [--no-pre-review] [--no-review] [--no-simplify] [--no-quality] [--no-feedback] [--no-ui-verify]'
+argument-hint: '[--split] [--quick] [--no-pre-review] [--no-review] [--no-simplify] [--no-quality] [--no-feedback] [--no-ui-verify] [--no-visuals] [--no-screenshots] [--no-diagram] [--before-url <url>]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.5.0'
+  version: '3.6.0'
   workflow_type: command
 ---
 
@@ -46,6 +47,10 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The post-draft qual
 | `no-feedback`  | `--no-feedback` anywhere in arguments              | Skip the **default-on** external-bot feedback loop (Step 6.7). Composes with everything. Does not skip the review-loop step.                                                |
 | `no-ui-verify` | `--no-ui-verify` (or the legacy alias `--no-preview-spec`) anywhere in arguments | Skip the **default-on** UI verification spec authoring (Step 6.4). Composes with everything. `--no-preview-spec` is the pre-rename spelling, still honoured so existing scripts and muscle memory keep working. |
 | `no-pre-review` | `--no-pre-review` anywhere in arguments            | Skip the **default-on** Step 5.5 — `Skill("review-branch", …)` **before** the push, which opens the draft already converged. Split mode then falls back to the review-less `Skill("polish", "simplify")` pre-split pass.        |
+| `no-visuals`   | `--no-visuals` anywhere in arguments               | Skip the **default-on** Step 9.5 entirely: no screenshots and no PR Lens diagram. |
+| `no-screenshots` | `--no-screenshots` anywhere in arguments         | Step 9.5 skips the screenshots and still decides whether to draw the diagram. |
+| `no-diagram`   | `--no-diagram` anywhere in arguments               | Step 9.5 skips the PR Lens diagram and still takes the screenshots. |
+| `before-url`   | `--before-url <url>`                               | The base URL Step 9.5 captures "before" screenshots from. It overrides `before_url:` in `.claude/aw-targets/preview.yml`. |
 
 > **Legacy positive flags.** `--review` and `--simplify` are still accepted as explicit single-pass scoping: `--review` alone ≡ `--no-simplify` (pr-reviewer only), `--simplify` alone ≡ `--no-review` (simplify only), and `--review --simplify` ≡ the default (full loop). `--pre-review` is likewise still accepted and is now a **no-op affirmation** of the default. Prefer the `--no-*` form — with the full loop now the default, the negative flags read more clearly.
 
@@ -260,7 +265,7 @@ Map its caller-neutral outcomes onto this step:
 | ------------ | ----------- |
 | `registered` | Go to Step 7b |
 | `tooling-failure` | Report the failure and escalate. Do **not** conclude anything about CI, and do **not** go to Step 8 |
-| `no-ci` (after 3 polls, no runs awaiting approval) | This repo does not run CI on PRs — jump to Step 10 |
+| `no-ci` (after 3 polls, no runs awaiting approval) | This repo does not run CI on PRs — jump to Step 9.5 |
 
 ### Step 7b: watch to completion
 
@@ -272,7 +277,7 @@ timeout 540 gh pr checks <pr-number> --watch
 
 | Exit | Next |
 | ---- | ---- |
-| 0 | CI green — jump to Step 10 |
+| 0 | CI green — jump to Step 9.5 |
 | 124 | Timed out with checks still running — watch again, up to **4 attempts total** (≈ 36 min). After the fourth, run `gh pr checks <pr-number>` once, report the still-pending checks, and escalate — never watch again |
 | 127, or stderr matching `command not found` / `could not resolve` / `authentication` / `rate limit` | **Tooling failure, not a CI failure** (`timeout` is absent on stock macOS — use `gtimeout`). Report it; do **not** fan out CI-log triage against a run that never failed |
 | Any other non-zero | A check genuinely failed — go to Step 8 |
@@ -360,6 +365,28 @@ Don't wrap the subagent in another loop — it has its own internal iteration ca
 - Push with `--no-verify` or otherwise skip hooks
 - Mark the PR ready-for-review while checks are red
 
+## Step 9.5: Attach visuals (default ON)
+
+Once CI has settled (green, red, or escalated), add screenshots and, where it earns its place, a PR
+Lens diagram to the description. This step runs after CI because the review loop and CI fixes push
+new commits. The preview for the final head SHA is only deployed by then, so the screenshots show
+the code that will merge.
+
+**Full procedure lives in [`rules/pr-visuals.md`](./rules/pr-visuals.md).** Load it when entering
+this step. In outline:
+
+| Sub-step | Does |
+| --- | --- |
+| V0 | Check the preconditions: not `--no-visuals`, not split mode, the `gh` path, and gh 2.99 or later for `--attach` |
+| V1 | Pick the screenshot mode mechanically. `before-after` when a *modified* file is UI per `ui-verify`'s `is-ui-diff.mjs`. `feature` when the UI files are all new. `none` when Step 6.4 authored no spec |
+| V2 | Run the Step 6.4 spec with `ui-verify run`, first against the preview ("after"), then against the base URL ("before", `before-after` only). Move each run's captures aside before the next run |
+| V3 | Draw a PR Lens diagram only when the diff matches criteria D1–D4 (new unit, a new or re-routed call between units, a reordered cross-unit flow, or a 3+ component change with a changed call) |
+| V4 | Write one `<!-- pr-visuals:v1 -->` region before the body's second `## ` heading and upload every image with `gh pr edit --body-file … --attach …` |
+| V5 | Record the `Visuals` line for Step 10 |
+
+The screenshots and the base run never change a verdict. A `fail` on the base URL is expected,
+because the spec asserts behaviour the base does not have yet.
+
 ## Step 10: Report
 
 Short summary:
@@ -391,6 +418,8 @@ CI:
   Auto-fixed: <one line per fix, or "none">
   Iterations: <total /ci-auto-fix subagent dispatches>
 
+Visuals (Step 9.5): <the V5 line from rules/pr-visuals.md>
+
 External reviewer feedback loop (/implement-suggestion --watch):
   Stop reason: <reviewers quiet | nothing actionable left | iteration cap | skipped (--no-feedback)>
   Iterations: <N>
@@ -406,6 +435,8 @@ Because both paths push to the same branch, surface the final head SHA so the us
 Step 6.4 has four skip conditions (`--no-ui-verify`, `--no-quality`, a non-UI diff, `ui-verify` not installed) and one failure mode, and every one of them previously reported as a clean, successful PR — the report had no slot for the spec at all, so an absent block was indistinguishable from a diff that needed none.
 That is the same self-concealing shape as failure modes `F6`/`F7` in [`diagnostic-surface.md`](../../workflow/autonomous-workflow/rules/diagnostic-surface.md): a degraded path that reports as a legitimate outcome is never fixed, because nobody learns it happened.
 State which of the six outcomes applied, and never omit the line on the grounds that the diff was not a UI change — `not authored (no UI files in diff)` is the informative answer there, not silence.
+
+**The `Visuals` line is mandatory on every run**, including a non-UI diff with no diagram. `screenshots none (no ui-verify spec: not authored (no UI files in diff)); diagram skipped (no D1–D4 match); not attached (nothing to attach)` is the informative answer there.
 
 **The `Pre-push review` line is mandatory on every run too**, including every run where the step was skipped.
 A named skip tells the reader the pass exists and why it did not run; omitting the line tells them nothing and reads identically to a run that took it.
