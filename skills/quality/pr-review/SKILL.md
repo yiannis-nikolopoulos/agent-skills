@@ -1,8 +1,9 @@
 ---
 name: pr-review
 description: >
-  One-shot read-only review of a GitHub PR — dispatches the `pr-reviewer` agent and
-  reports its verdict and findings without touching your code. The short entry point
+  One-shot read-only review of a GitHub PR — dispatches the `pr-reviewer` agent with
+  `--no-post` and reports its verdict and proposed comments without touching your code
+  or writing anything to GitHub; you decide what gets posted. The short entry point
   for "review this PR" when you do not want an apply-and-converge loop. Also writes
   maintainer relevance rules via `/pr-review remember <fact>`. Invoke with /pr-review.
 disable-model-invocation: true
@@ -10,7 +11,7 @@ argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--with a,
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.2.0'
   workflow_type: command
 ---
 
@@ -20,9 +21,10 @@ This is the thin entry point the [`pr-reviewer`](../../../agents/pr-reviewer.md)
 documentation already promises (`Trigger with /pr-review <PR-URL|#n>`), and it does exactly one
 thing: dispatch that agent at a PR and report what came back.
 
-It **never applies a finding, never pushes, and never resolves a thread**.
+It **never applies a finding, never pushes, never resolves a thread, and never posts to GitHub**.
 That is the whole distinction from its neighbours, and it is the reason to reach for this command
-rather than one of them: you get a review, and your working tree is exactly where you left it.
+rather than one of them: you get a review, your working tree is exactly where you left it, and the
+PR carries nothing you did not choose to post.
 
 ## Contents
 
@@ -92,8 +94,16 @@ reason to skip the review.
 
 `pr-reviewer` is an **agent, not a skill**.
 
+**Always prepend `--no-post`.** It is not a pass-through flag and not optional: this command is
+the caller who decides what reaches the PR, so the agent must return its report and proposed
+inline comments instead of posting them (`pr-reviewer.md § No-post mode`). There is no flag that
+removes it — a user who wants the agent to post uses `/review-changes`.
+
 ```text
 ✅ RIGHT — through the harness's sub-agent dispatch tool
+Task(subagent_type="pr-reviewer", prompt="<PR_REF> --no-post <pass-through flags>")
+
+❌ WRONG — without --no-post the agent posts a sticky report and an inline review on your behalf
 Task(subagent_type="pr-reviewer", prompt="<PR_REF> <pass-through flags>")
 
 ❌ WRONG — there is no skill by that name; this errors with `Unknown skill: pr-reviewer`
@@ -107,7 +117,7 @@ this session exposes; the call shape is identical. A tool taking a
 whatever it is spelled.
 
 Dispatch **once**. This command does not loop: a second pass over an unchanged head re-reads the
-same code and re-posts the same report, and iterating a review against fixes is what
+same code and returns the same report, and iterating a review against fixes is what
 [`review-loop`](../review-loop/SKILL.md) exists for.
 
 ### When sub-agent dispatch is unavailable
@@ -135,26 +145,36 @@ dispatching one.
 
 ## Step 3: Report
 
-The agent posts its own sticky report comment and its inline findings.
-This skill adds a terminal summary and nothing else — never a second GitHub write.
+Nothing reached GitHub. The agent returns the report and every proposed inline comment, and this
+skill turns them into a terminal summary the user can decide from:
 
 ```text
-/pr-review on PR #<n> (<owner>/<repo>)
+/pr-review on PR #<n> (<owner>/<repo>) — nothing posted
 
 Verdict: <PASS | WARN | FAIL>
 Run mode: <full | incremental | incremental-quick | zero-delta> · <deep | standard | quick> · <checkout | tarball | diff-only>
-Findings: <N inline (<K> blocking)>, <D deferred (low-confidence, advisory)>
+Findings: <N proposed inline (<K> blocking)>, <D deferred (low-confidence, advisory)>
 Gates: <one line naming any non-passing gate, or "all passing">
 
-<one line per blocking finding: path:line — the ask>
+Proposed comments:
+<k>. <path>:<line> — <prefix> (<tier>): <the ask, one line>   [blocking]
+...
 
-Report: <URL of the sticky comment>
-Apply these: /review-changes <PR>   (or /implement-suggestion <PR>)
+Full report: <NO_POST_DIR>/report.md
+Comment bodies + anchors: <NO_POST_DIR>/inline-comments.json
 ```
 
-Surface **blocking findings and non-passing gates prominently**.
-This command applies nothing, so an unsurfaced blocker is a blocker the user never sees — the
-terminal summary is the only place the result reaches them in this flow.
+List **every** proposed comment, numbered, blocking ones first, so the user can say "post 1 and 3"
+by number. Surface **non-passing gates prominently** — this summary is the only place the result
+reaches the user.
+
+If the agent's return mentions **any** GitHub write (a sticky URL, a posted review, a resolved
+thread), say so as the first line of the summary: the `--no-post` contract was broken and the user
+needs to know what is now on the PR.
+
+**Posting is a separate, explicit step.** Post a proposed comment only when the user names it in a
+later message, post exactly the ones named, and post the body as returned. Never post the report
+comment unless the user asks for it by name.
 
 Report the verdict **as returned**. Do not soften a `FAIL` because the findings look minor to you,
 and do not upgrade a `PASS` because the diff looks risky: the gates and the verifier already made
@@ -253,21 +273,19 @@ Both exemptions are the agent's, not this command's, so this refusal is a restat
 
 | Command | Reviews | Applies findings | Pushes | Loops |
 | --- | --- | --- | --- | --- |
-| **`/pr-review <PR>`** | yes | **no** | no | no — one dispatch |
+| **`/pr-review <PR>`** — posts nothing | yes | **no** | no | no — one dispatch |
 | [`/review-changes <PR>`](../review-changes/SKILL.md) | yes | yes | yes | yes, via `review-loop` |
 | [`/review-changes <PR> --report`](../review-changes/SKILL.md) | yes | no | no | no |
 | [`review-loop`](../review-loop/SKILL.md) | yes | yes | yes | yes, cap 5, converges on threads + CI |
 | [`/polish`](../polish/SKILL.md) | yes | mechanical only | no | no — one pass each |
 
-`/pr-review <PR>` and `/review-changes <PR> --report` reach the same place by design.
-This command is the direct name for it, and it is what the agent's own description, `depth-routing.md`,
-and `memory.md` all already tell the user to type; `--report` stays a flag on the convergence
-command for people already there.
+`/pr-review <PR>` and `/review-changes <PR> --report` run the same review, but only `/pr-review`
+keeps the result off the PR: `--report` lets the agent post its sticky report and inline review.
 
 ## Hard rules
 
 - **Read-only, always.** This command never edits a file, never commits, never pushes, and never resolves a thread. Applying is [`/implement-suggestion`](../../workflow/implement-suggestion/SKILL.md); applying-and-converging is [`review-loop`](../review-loop/SKILL.md).
-- **Never write to GitHub.** The agent posts its own sticky report and inline findings. This skill adds a terminal summary only — a second comment would duplicate a report that is rewritten in place precisely so a PR does not accumulate copies.
+- **Never write to GitHub on the user's behalf.** Always dispatch with `--no-post`, so the agent posts no report, no review, and resolves no thread. This skill adds a terminal summary only. The user decides which findings become comments; post only the ones they name, in a later message.
 - **Dispatch via the sub-agent dispatch tool, never `Skill()`.** `pr-reviewer` is an agent; `Skill("pr-reviewer", …)` errors with `Unknown skill`. The tool is named `Task` in some harnesses and `Agent` in others — use the one this session has.
 - **One dispatch per invocation. Do not loop.** Re-reviewing an unchanged head produces the same report at full cost.
 - **Absent sub-agent dispatch is a skip, not a fallback — and it is a CAPABILITY test, not a name test.** Conclude it only when no available tool dispatches a sub-agent under any name; the absence of `Task` alone is not evidence. Then never review in this context and label it a `pr-reviewer` review, and never retry the dispatch.

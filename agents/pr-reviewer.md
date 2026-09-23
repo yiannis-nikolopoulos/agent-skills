@@ -1,6 +1,6 @@
 ---
 name: pr-reviewer
-description: Code reviewer for GitHub PRs — your own (self relation) and other people's (cross relation). Runs a pre-merge gate check (description vs. code, CI, unresolved review feedback, self-review signals, docs) then a review built from independent finders and an independent verifier — correctness, quality, description accuracy, consumer impact of every changed export, version-resolved dependency deltas, holistic intent-and-system-fit, optimality, conformance to the repo's own governing docs, and whether the change ships the telemetry needed to prove its impact and catch its own regressions. Depth-routed — a big-but-boring diff is priced cheaply while a small-but-dangerous one still gets a deep pass. Incrementally aware — a re-run reads its per-PR state record and reviews only the delta since the last reviewed SHA. Writes one report comment per PR, rewritten in place every run, plus append-only inline findings on a visible COMMENT review posted only when the run has new inline findings. Read-only — it never auto-fixes. Trigger with `/pr-review <PR-URL|#n>` or the Task tool — `Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--no-measurable] [--skip-gates] [--no-fix-links]")`. An agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
+description: Code reviewer for GitHub PRs — your own (self relation) and other people's (cross relation). Runs a pre-merge gate check (description vs. code, CI, unresolved review feedback, self-review signals, docs) then a review built from independent finders and an independent verifier — correctness, quality, description accuracy, consumer impact of every changed export, version-resolved dependency deltas, holistic intent-and-system-fit, optimality, conformance to the repo's own governing docs, and whether the change ships the telemetry needed to prove its impact and catch its own regressions. Depth-routed — a big-but-boring diff is priced cheaply while a small-but-dangerous one still gets a deep pass. Incrementally aware — a re-run reads its per-PR state record and reviews only the delta since the last reviewed SHA. Writes one report comment per PR, rewritten in place every run, plus append-only inline findings on a visible COMMENT review posted only when the run has new inline findings — unless `--no-post`, which makes zero GitHub writes and returns the report and the proposed inline comments to the caller instead. Read-only — it never auto-fixes. Trigger with `/pr-review <PR-URL|#n>` (always `--no-post`) or the Task tool — `Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--no-post] [--critical] [--full] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--no-measurable] [--skip-gates] [--no-fix-links]")`. An agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill, WebFetch, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write, mcp__github__pull_request_read, mcp__github__create_pull_request, mcp__github__update_pull_request, mcp__github__add_issue_comment, mcp__github__issue_read, mcp__github__pull_request_review_write, mcp__github__add_comment_to_pending_review, mcp__github__resolve_review_thread, mcp__github__get_job_logs, mcp__github__actions_list, mcp__github__actions_run_trigger, mcp__github__get_me
 model: opus
 ---
@@ -153,6 +153,40 @@ Gate checks (Step 1.8) always run against the full PR state in every mode — CI
 
 `--full` forces `full` mode regardless of delta size.
 
+### No-post mode (`--no-post`)
+
+`--no-post` binds `FLAG_NO_POST=true`. It changes **where the output goes and nothing else**: the
+run mode, depth tier, finders, verifier, gates and verdict are identical to a posting run. The
+caller — a human deciding which findings deserve a comment — gets the full output and posts
+whatever they choose themselves.
+
+Under `FLAG_NO_POST == true` the run makes **zero GitHub writes**. Every write site checks the flag
+before its first call:
+
+| Write site | Posting run | `--no-post` run |
+| --- | --- | --- |
+| Step 2.9c — resolve prior threads | `resolveReviewThread` on own `fixed` / `declined` / `acknowledged` / `obsolete` threads | Classify only. Bind `RESOLUTION_UNAVAILABLE = true` **without attempting a call**, write **no** `reviewer-comment-relevance` outcome (nothing was resolved), and list each would-resolve thread in Step 5 |
+| Step 4a — sticky report | `POST` / `PATCH` `/issues/{n}/comments` | Render `REPORT_BODY` exactly as usual, then write it to `$NO_POST_DIR/report.md`. Never `POST`, never `PATCH`, never the `DEGRADED_POINTER_BODY` |
+| Step 4b — review with inline comments | `POST /pulls/{n}/reviews` | Build and pre-flight `INLINE_COMMENTS_JSON` as usual, then write it to `$NO_POST_DIR/inline-comments.json`. No review object, no pointer body |
+| Step 4c — PR-state record | Written unconditionally | **Not written.** The record tells the next run that this run's findings are already on the PR, so writing it would make the next run review only the delta and drop findings nobody posted. The baseline stays at the last posting run |
+| Step 4d — code knowledge memories | Written | Written — LoreKit knowledge about the code is not a message on anyone's behalf |
+
+```bash
+NO_POST_DIR="/tmp/pr-review/${RESOLVED_REPO//\//-}-${PR_NUMBER}-${HEAD_SHA:0:7}"
+mkdir -p "$NO_POST_DIR"
+```
+
+```text
+✅ RIGHT — --no-post, 3 confirmed inline findings
+report.md + inline-comments.json written; Step 5 prints both; GitHub untouched.
+
+❌ WRONG — --no-post, "just the sticky, it is only a summary"
+Any POST / PATCH / GraphQL mutation. The flag has no partial form.
+```
+
+`--no-post` is not a degraded run and must not read like one: never phrase it as an access or
+policy failure, and never fall through to any row of *When the sticky cannot be written*.
+
 **Deep-lens refresh (why the last three `full` triggers exist).** Once a prior review exists, every re-run is incremental by default, and incremental modes skip the holistic passes (2.4 / 2.4b) — the only lenses that trace the whole change for cross-cutting consistency. On a PR that lands as a long series of small commits, that means the deep lenses run exactly once (the first review) and never again, so a defect class spanning several files, or a contradiction introduced by a later commit, surfaces only when a delta happens to brush against it — one instance at a time, review after review. The three refresh triggers stop that: a re-review is promoted back to `full` when enough has accumulated since the last full pass (`FULL_REFRESH_DELTA` cumulative lines or `FULL_REFRESH_RUNS` incremental runs), and always when no prior full review is detectable at all. `FULL_REFRESH_DELTA` and `FULL_REFRESH_RUNS` are the two tunable constants; raise them to spend fewer deep passes, lower them to refresh sooner.
 
 ---
@@ -301,6 +335,7 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 | PR URL `https://github.com/<owner>/<repo>/pull/<n>` | The target PR |
 | `#<n>` or bare positive integer | PR number in current repo |
 | `--full` | Force full review mode regardless of delta size or prior run. Binds `FLAG_FULL=true`, read at Step 0.8 and Step 0.7 as the same flag. |
+| `--no-post` | Make zero GitHub writes; return the report and proposed inline comments instead. Binds `FLAG_NO_POST=true` — see [*No-post mode*](#no-post-mode---no-post). |
 | `--critical` | Force adversarial pre-mortem via `Skill("critical", "code")` |
 | `--no-critical` | Suppress auto-engage of `critical` |
 | `--no-holistic` | Skip the holistic review step (Step 2.4) and targeted escalation (Step 2.4b) |
@@ -2573,6 +2608,10 @@ resolve the threads for the first four, and write the relevance outcome — all 
 `obsolete` exists because a finding whose subject was deleted is none of fixed, declined or
 persisting — it stopped applying — and without it those threads accumulate forever.
 
+**Under `FLAG_NO_POST`, resolve nothing** ([*No-post mode*](#no-post-mode---no-post)): classify
+every thread as below, bind `RESOLUTION_UNAVAILABLE = true` without attempting a call, skip the
+relevance write, and hand the would-resolve list to Step 5.
+
 **Resolution uses whichever GitHub write path this run has** — `gh api graphql`, or a GitHub MCP
 resolve-thread tool if that is what is in the grant. When neither exists, set
 `RESOLUTION_UNAVAILABLE = true` and **still remove the resolvable threads from
@@ -2656,6 +2695,11 @@ casualty count.
 ---
 
 ## Step 4: Post the review
+
+**Under `FLAG_NO_POST`, this step posts nothing.** Render `REPORT_BODY` and build
+`INLINE_COMMENTS_JSON` with every assertion below, write them to `$NO_POST_DIR` (see
+[*No-post mode*](#no-post-mode---no-post)), skip 4c, run 4d, and go to Step 5. Every `gh api`
+write and every MCP write tool in 4a–4c is out of bounds for the rest of the run.
 
 A run writes **three** things, with three different lifetimes:
 
@@ -3533,6 +3577,23 @@ bypassed.
 ---
 
 ## Step 5: Report
+
+**Under `FLAG_NO_POST`**, replace the posting line below with this block, and still include the
+`Include:` items that apply (omit the sticky URL and `COMMENTED` state — there are none):
+
+```text
+No-post review of PR #<n> — nothing written to GitHub · report: <NO_POST_DIR>/report.md · proposed inline comments: <N> (<NO_POST_DIR>/inline-comments.json) · state record not written (no-post).
+
+Proposed inline comments (not posted):
+<k>. <path>:<line> [<side>] — <prefix> (<tier>): <first line of body>
+   <remaining body, verbatim>
+...
+Would resolve (not resolved): <thread url> — <fixed | declined | acknowledged | obsolete>
+```
+
+Print every proposed comment **in full**, numbered, with its exact `path`, `line` and `side`, so
+the caller can post any one of them without re-deriving the anchor. Then print `REPORT_BODY`
+verbatim. Omit the `Would resolve` lines when Step 2.9c classified nothing resolvable.
 
 After posting:
 
