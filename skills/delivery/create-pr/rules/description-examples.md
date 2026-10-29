@@ -4,7 +4,7 @@ Worked examples of the [description contract](./description-contract.md) — thr
 and one bad one. Read them alongside the contract's Step 3 output formats, not instead of them.
 
 
-## Good — feature (lean, narrative, fits the 25-line budget)
+## Good — feature (lean, narrative, fits the 120-word budget)
 
 ```markdown
 ## Why
@@ -27,7 +27,7 @@ and one bad one. Read them alongside the contract's Step 3 output formats, not i
 ```markdown
 ## Summary
 
-Agent0 emits the same logical dashboard several times as it iterates. Today each emission is its own card with its own "Create" button — picking the right one is guesswork. This PR collapses that into one floating card always reflecting the latest version, with revision history folded into the create dialog so users can flip between revisions and see the rendered dashboard before deploying.
+Agent0 emits the same dashboard several times as it iterates, each as its own card with a "Create" button. Now one card shows the latest version, and the create dialog holds the revisions.
 
 ### Overview
 
@@ -38,14 +38,14 @@ Agent0 emits the same logical dashboard several times as it iterates. Today each
 
 ## What changed
 
-- Floating ArtifactsList above the prompt input — one card per logical artifact
-- Cross-chain dedup at the data layer so floating list + dialog tabs share one revisions array
-- Revision tabs inside the create dialog with a `Show source` toggle for the YAML diff
-- Removed the standalone revision sidebar (~600 LOC deleted)
+- One card per dashboard above the prompt input, always showing the latest version
+- The card and the dialog read the same revision list
+- Revision tabs in the create dialog, with a `Show source` toggle for the YAML diff
+- The separate revision sidebar is gone (~600 lines deleted)
 
 ## How to verify
 
-- Generate a dashboard in the preview, ask the agent to refine it, confirm the card shows one entry with `v{N}` + `Create dashboard`
+Generate a dashboard in the preview, ask Agent0 to refine it, and check that one card shows `v{N}`.
 ```
 
 ## Good — bug fix
@@ -88,3 +88,45 @@ in the codebase to support this new functionality.
 ```
 
 (Why it's bad: the summary is empty calories, the change list is the file list, and the type checklist adds zero signal.)
+
+## Bad — dense and internal
+
+This excerpt is only 7 lines, but its two bullets run to 32 and 26 words. It is written for someone who already knows the code.
+
+```markdown
+## Summary
+
+A check rule save gives each failed check a new ID. Since #24422 the alertmanager keeps a silence anchored on the earlier ID silencing the series, but the failed check sidebar, Unsilence and Agent0 still read coverage by exact anchor.
+
+- Coverage merges CPA's exact-anchor read with the failed check's current `silencedBy` stamp. Silences that are deleted, completed or already listed are dropped. If the stamp read fails, the coverage read fails too.
+- Unsilence and Agent0's `endSilences` call the existing `DELETE ?coversFailedCheckId=` once per covering anchor. A silence with no failed-check anchor is never ended from a failed check.
+
+<details><summary>Validation</summary>
+
+- review-branch (local): PASS; one nitpick applied.
+</details>
+```
+
+(Why it's bad: bullets of 30+ words, internal names a reviewer has to decode ("CPA", "exact anchor", "stamp"), a `Summary` heading in a repo without a template, and process notes nobody needs.)
+
+The same PR within the contract:
+
+```markdown
+## Why
+
+Saving a check rule gives its failed checks new IDs. Since #24422 an older silence keeps working, but the sidebar, Unsilence and Agent0 only looked at the new ID ([INS-1481](https://linear.app/dash0/issue/INS-1481)).
+
+## What changed
+
+- The sidebar counts silences made on earlier versions of the check.
+- Unsilence and Agent0 also end those older silences.
+- An older failed check warns that unsilencing it ends the silence for the whole series.
+
+## How to verify
+
+`pnpm exec vitest run src/alerting` in `components/ui`, and `src/tools/silences` in `components/agents`.
+
+## Notes for reviewers
+
+- The "End now" toast can still say notifications resume while an older silence covers the check.
+```

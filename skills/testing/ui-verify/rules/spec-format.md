@@ -66,7 +66,7 @@ The runner resolves that target to the PR's live preview deployment (see [`previ
 
 Both are owned jointly with the [description contract](../../../delivery/create-pr/rules/description-contract.md); this file is the authority for the ui-verify side.
 
-1. **The marked region is exempt from the description length ceiling.** `create-pr`'s body target is ≤ 25 rendered lines (hard 40), counting every line. The ui-verify block is collapsed and machine-oriented, so it does **not** count toward that budget. `create-pr`'s Step 5 length self-check skips everything between the markers.
+1. **The marked region is exempt from the description length ceiling.** `create-pr`'s body target is ≤ 120 words (hard 200). The ui-verify block is collapsed and machine-oriented, so it does **not** count toward that budget. `create-pr`'s Step 5 word count skips everything between the markers.
 2. **The marked region is preserved verbatim on refresh.** When `review-loop` refreshes the PR body to match the shipped diff, it carries the whole `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` region forward unchanged. The refresh rewrites narrative sections only. Re-authoring the spec is `ui-verify author`'s job, not the refresh's — the same owned-region principle as the `pr-reviewer` sticky comment.
 
 ## Good and bad

@@ -1,7 +1,7 @@
 ---
 name: create-pr
 description: >
-  Writes a short, narrative GitHub PR description (≤ 25 lines, ceiling 40),
+  Writes a short, plain-language GitHub PR description (≤ 120 words),
   pushes, opens a draft PR, then runs review-loop (pr-reviewer →
   implement-suggestion → polish simplify, up to 5 iterations) until every
   review thread is resolved. Scale down with --no-review, --no-simplify,
@@ -71,9 +71,9 @@ Before any GitHub step, resolve which path you have — `gh` CLI, `mcp__github__
 
 ## Steps 1–5: Write the title and body (shared contract)
 
-The narrative rules, the length budget, and the five authoring steps (gather
+The narrative rules, the word budget, and the authoring steps (gather
 information → understand the narrative → choose output format → write the title →
-length self-check) live in one shared file so `create-pr` and `review-loop` write
+length self-check → plain-language pass) live in one shared file so `create-pr` and `review-loop` write
 identical-quality descriptions: **[`rules/description-contract.md`](./rules/description-contract.md)**.
 
 Follow that contract to produce the title and body. Two `create-pr`-specific notes:
