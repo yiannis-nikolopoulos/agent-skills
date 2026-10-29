@@ -1,27 +1,25 @@
 ---
 name: create-pr
 description: >
-  Generates a short, narrative GitHub pull request description (≤ 25 lines,
-  hard ceiling 40), pushes the branch, opens the PR as a draft, then runs
-  review-loop (pr-reviewer → implement-suggestion → polish simplify, up to 5
-  iterations) until every review thread is resolved via fix or reply. Scale
-  down with --no-review, --no-simplify, --quick (light pass), or
-  --no-quality (skip the loop). A post-push external-bot feedback loop
-  runs by default (--no-feedback to skip). On a UI diff, injects a preview
-  verification spec by default (--no-ui-verify to skip). Before the push,
-  converges the branch by default with review-branch, so the draft opens
-  review-clean (--no-pre-review to skip). With
-  --split, breaks the branch diff into 2–4 focused, dependency-ordered draft
-  PRs after user approval. Escalates judgment-required CI failures via
-  /confidence. After CI, attaches before/after or new-feature screenshots
-  and, for cross-component diffs, a PR Lens diagram (--no-visuals to skip).
+  Writes a short, narrative GitHub PR description (≤ 25 lines, ceiling 40),
+  pushes, opens a draft PR, then runs review-loop (pr-reviewer →
+  implement-suggestion → polish simplify, up to 5 iterations) until every
+  review thread is resolved. Scale down with --no-review, --no-simplify,
+  --quick, or --no-quality. Default-on extras, each with an opt-out: an
+  external-bot feedback loop (--no-feedback), a UI verification spec on UI
+  diffs (--no-ui-verify), pre-push convergence with review-branch
+  (--no-pre-review), screenshots and a PR Lens diagram after CI
+  (--no-visuals), and a review guide artifact linked from the body for
+  large or stacked PRs (--no-review-guide; --review-guide forces one).
+  --split breaks the diff into 2–4 dependency-ordered draft PRs after user
+  approval. Escalates judgment-required CI failures via /confidence.
   Invoke with /create-pr or /create-pr --split.
 disable-model-invocation: false
-argument-hint: '[--split] [--quick] [--no-pre-review] [--no-review] [--no-simplify] [--no-quality] [--no-feedback] [--no-ui-verify] [--no-visuals] [--no-screenshots] [--no-diagram] [--before-url <url>]'
+argument-hint: '[--split] [--quick] [--no-pre-review] [--no-review] [--no-simplify] [--no-quality] [--no-feedback] [--no-ui-verify] [--no-visuals] [--no-screenshots] [--no-diagram] [--before-url <url>] [--review-guide] [--no-review-guide]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.6.0'
+  version: '3.7.0'
   workflow_type: command
 ---
 
@@ -51,6 +49,8 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The post-draft qual
 | `no-screenshots` | `--no-screenshots` anywhere in arguments         | Step 9.5 skips the screenshots and still decides whether to draw the diagram. |
 | `no-diagram`   | `--no-diagram` anywhere in arguments               | Step 9.5 skips the PR Lens diagram and still takes the screenshots. |
 | `before-url`   | `--before-url <url>`                               | The base URL Step 9.5 captures "before" screenshots from. It overrides `before_url:` in `.claude/aw-targets/preview.yml`. |
+| `review-guide` | `--review-guide` anywhere in arguments             | Step 9.6 writes a review guide even when the diff matches none of its R1–R4 criteria. |
+| `no-review-guide` | `--no-review-guide` anywhere in arguments       | Skip the **default-on** Step 9.6: no review guide and no link in the body. Wins over `--review-guide`. |
 
 > **Legacy positive flags.** `--review` and `--simplify` are still accepted as explicit single-pass scoping: `--review` alone ≡ `--no-simplify` (pr-reviewer only), `--simplify` alone ≡ `--no-review` (simplify only), and `--review --simplify` ≡ the default (full loop). `--pre-review` is likewise still accepted and is now a **no-op affirmation** of the default. Prefer the `--no-*` form — with the full loop now the default, the negative flags read more clearly.
 
@@ -387,13 +387,37 @@ this step. In outline:
 The screenshots and the base run never change a verdict. A `fail` on the base URL is expected,
 because the spec asserts behaviour the base does not have yet.
 
+## Step 9.6: Publish a review guide (default ON for large or stacked PRs)
+
+After the visuals, publish a review guide: one page, as a Claude artifact, that maps the diff for a
+reviewer. It holds what the short body leaves out on purpose: where the PR sits in its stack, any
+deviation from the plan, a file-level table of what changes, a reading order, a worked example, and
+the browser evidence. The body links it from its first line. This step runs after Step 9.5 so the
+guide can embed the same screenshots and diagram.
+
+**Full procedure lives in [`rules/review-guide.md`](./rules/review-guide.md).** Load it when
+entering this step. In outline:
+
+| Sub-step | Does |
+| --- | --- |
+| G0 | Check the preconditions: not `--no-review-guide`, not split mode, an artifact tool, a GitHub path |
+| G1 | Write a guide only when the diff matches R1–R4: 8+ source files, 300+ source lines, a stacked PR, or a Step 9.5 diagram. `--review-guide` forces one |
+| G2 | Gather the inputs: diff, plan, stack, tests, Step 9.5 images, an earlier guide URL |
+| G3 | Write the page after loading `artifact-design`, with the fixed section order and its include-when rules |
+| G4 | Publish, updating the earlier guide's URL on a re-run |
+| G5 | Write one `<!-- review-guide:v1 -->` link region as the first lines of the body |
+| G6 | Tell the user to share the artifact with their organization. It is private when published |
+| G7 | Record the `Review guide` line for Step 10 |
+
+The guide never replaces the body and never changes a verdict.
+
 ## Step 10: Report
 
 Short summary:
 
 - Final check status (all green, or which are red and why)
 - What was auto-fixed, one line per fix
-- Anything left for the user (only if Step 9 escalated or hit the cap)
+- Anything left for the user (only if Step 9 escalated or hit the cap, or Step 9.6 published a guide that still needs sharing)
 
 **Unless `--no-feedback` was passed**, also wait for the background external-reviewer-feedback loop (Step 6.7) to complete — you will be notified — and append its result. Final report shape:
 
@@ -420,6 +444,8 @@ CI:
 
 Visuals (Step 9.5): <the V5 line from rules/pr-visuals.md>
 
+Review guide (Step 9.6): <the G7 line from rules/review-guide.md>
+
 External reviewer feedback loop (/implement-suggestion --watch):
   Stop reason: <reviewers quiet | nothing actionable left | iteration cap | skipped (--no-feedback)>
   Iterations: <N>
@@ -437,6 +463,8 @@ That is the same self-concealing shape as failure modes `F6`/`F7` in [`diagnosti
 State which of the six outcomes applied, and never omit the line on the grounds that the diff was not a UI change — `not authored (no UI files in diff)` is the informative answer there, not silence.
 
 **The `Visuals` line is mandatory on every run**, including a non-UI diff with no diagram. `screenshots none (no ui-verify spec: not authored (no UI files in diff)); diagram skipped (no D1–D4 match); not attached (nothing to attach)` is the informative answer there.
+
+**The `Review guide` line is mandatory on every run.** `skipped (no R1–R4 match)` is the informative answer for a small PR. When a guide was published, the share reminder from G6 is a needs-you item: list it under "Anything left for the user".
 
 **The `Pre-push review` line is mandatory on every run too**, including every run where the step was skipped.
 A named skip tells the reader the pass exists and why it did not run; omitting the line tells them nothing and reads identically to a run that took it.

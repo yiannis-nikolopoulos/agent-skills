@@ -34,10 +34,11 @@ A reviewer should read the entire description in **under 30 seconds**. Concretel
 
 If you can't fit the change inside this budget, the PR is probably too big — stop and offer the user `/create-pr --split` instead of expanding the description.
 
-**Two regions are exempt.** Content between these markers does **not** count toward the ≤ 25 / 40 budget:
+**Three regions are exempt.** Content between these markers does **not** count toward the ≤ 25 / 40 budget:
 
 - the UI verification spec block, `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` (see [UI verification spec](#ui-verification-spec-optional)). It is collapsed and machine-oriented, not reviewer-facing prose.
 - the visuals region, `<!-- pr-visuals:v1 -->` … `<!-- /pr-visuals:v1 -->` (see [PR visuals region](#pr-visuals-region-optional)). It holds images, not prose.
+- the review guide link, `<!-- review-guide:v1 -->` … `<!-- /review-guide:v1 -->` (see [Review guide link](#review-guide-link-optional)). It holds one link.
 
 ## Core principles
 
@@ -141,6 +142,16 @@ It sits immediately before the body's second `## ` heading.
 - **It is exempt from the length budget** (see above).
 - **On refresh, carry the whole region forward unchanged**, at the same position. If a refresh drops it, the uploaded images are lost from the PR.
 
+## Review guide link (optional)
+
+`create-pr` Step 9.6 can publish a review guide for a large or stacked PR and link it from the body,
+inside one region delimited by `<!-- review-guide:v1 -->` … `<!-- /review-guide:v1 -->`. There is at
+most one per PR. It is the first region of the body.
+
+- **Author it only through [`review-guide.md`](./review-guide.md).** The URL points at a published artifact that cannot be recreated from the diff.
+- **It is exempt from the length budget** (see above).
+- **On refresh, carry the whole region forward unchanged**, as the first lines of the body. The body must still stand alone: never shorten it on the grounds that the guide covers the detail.
+
 ## Step 4: Write the title
 
 - Imperative mood, specific, under ~70 chars.
@@ -150,7 +161,7 @@ It sits immediately before the body's second `## ` heading.
 
 ## Step 5: Length self-check (before writing the body)
 
-Count the rendered lines of the body, **skipping any `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` or `<!-- pr-visuals:v1 -->` … `<!-- /pr-visuals:v1 -->` region**. Both are exempt (see [Length budget](#length-budget--the-hard-rule)). If the remaining body is over 25, cut. Common cuts:
+Count the rendered lines of the body, **skipping any `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->`, `<!-- pr-visuals:v1 -->` … `<!-- /pr-visuals:v1 -->` or `<!-- review-guide:v1 -->` … `<!-- /review-guide:v1 -->` region**. All three are exempt (see [Length budget](#length-budget--the-hard-rule)). If the remaining body is over 25, cut. Common cuts:
 
 - **Collapse "Notes for reviewers"** unless it flags a real risk or judgment call. "We chose X because Y" usually belongs in a code comment.
 - **Drop "internal narration"** — explanations of memo deps, useEffect timing, and other implementation detail that a reviewer will read in the diff anyway.
