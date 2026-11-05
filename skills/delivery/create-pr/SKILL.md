@@ -8,18 +8,17 @@ description: >
   --quick, or --no-quality. Default-on extras, each with an opt-out: an
   external-bot feedback loop (--no-feedback), a UI verification spec on UI
   diffs (--no-ui-verify), pre-push convergence with review-branch
-  (--no-pre-review), screenshots and a PR Lens diagram after CI
-  (--no-visuals), and a review guide artifact linked from the body for
-  large or stacked PRs (--no-review-guide; --review-guide forces one).
-  --split breaks the diff into 2–4 dependency-ordered draft PRs after user
+  (--no-pre-review), and screenshots and a PR Lens diagram after CI
+  (--no-visuals). A UI-only or preview-testable PR gets a short "Test in
+  preview" section with manual steps. --split breaks the diff into 2–4 dependency-ordered draft PRs after user
   approval. Escalates judgment-required CI failures via /confidence.
   Invoke with /create-pr or /create-pr --split.
 disable-model-invocation: false
-argument-hint: '[--split] [--quick] [--no-pre-review] [--no-review] [--no-simplify] [--no-quality] [--no-feedback] [--no-ui-verify] [--no-visuals] [--no-screenshots] [--no-diagram] [--before-url <url>] [--review-guide] [--no-review-guide]'
+argument-hint: '[--split] [--quick] [--no-pre-review] [--no-review] [--no-simplify] [--no-quality] [--no-feedback] [--no-ui-verify] [--no-visuals] [--no-screenshots] [--no-diagram] [--before-url <url>]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.7.0'
+  version: '3.8.0'
   workflow_type: command
 ---
 
@@ -49,8 +48,6 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The post-draft qual
 | `no-screenshots` | `--no-screenshots` anywhere in arguments         | Step 9.5 skips the screenshots and still decides whether to draw the diagram. |
 | `no-diagram`   | `--no-diagram` anywhere in arguments               | Step 9.5 skips the PR Lens diagram and still takes the screenshots. |
 | `before-url`   | `--before-url <url>`                               | The base URL Step 9.5 captures "before" screenshots from. It overrides `before_url:` in `.claude/aw-targets/preview.yml`. |
-| `review-guide` | `--review-guide` anywhere in arguments             | Step 9.6 writes a review guide even when the diff matches none of its R1–R4 criteria. |
-| `no-review-guide` | `--no-review-guide` anywhere in arguments       | Skip the **default-on** Step 9.6: no review guide and no link in the body. Wins over `--review-guide`. |
 
 > **Legacy positive flags.** `--review` and `--simplify` are still accepted as explicit single-pass scoping: `--review` alone ≡ `--no-simplify` (pr-reviewer only), `--simplify` alone ≡ `--no-review` (simplify only), and `--review --simplify` ≡ the default (full loop). `--pre-review` is likewise still accepted and is now a **no-op affirmation** of the default. Prefer the `--no-*` form — with the full loop now the default, the negative flags read more clearly.
 
@@ -76,10 +73,11 @@ information → understand the narrative → choose output format → write the 
 length self-check → plain-language pass) live in one shared file so `create-pr` and `review-loop` write
 identical-quality descriptions: **[`rules/description-contract.md`](./rules/description-contract.md)**.
 
-Follow that contract to produce the title and body. Two `create-pr`-specific notes:
+Follow that contract to produce the title and body. Three `create-pr`-specific notes:
 
 - The contract's Step 5 length self-check is the same "PR too big → `/create-pr --split`" signal referenced in the Modes section; in split mode you skip it (the split *is* the response).
 - If you can't infer the *why* / *what* from the diff, ask the user — never pad with guesses.
+- Run the contract's Step 3b preview gate and **record its outcome now** for the Step 10 `Test in preview` line. In split mode, run it once per sub-PR on that sub-PR's files.
 
 Then continue to Step 5.5, and from there to Step 6 to push and open the draft PR.
 
@@ -387,43 +385,21 @@ this step. In outline:
 The screenshots and the base run never change a verdict. A `fail` on the base URL is expected,
 because the spec asserts behaviour the base does not have yet.
 
-## Step 9.6: Publish a review guide (default ON for large or stacked PRs)
-
-After the visuals, publish a review guide: one page, as a Claude artifact, that maps the diff for a
-reviewer. It holds what the short body leaves out on purpose: where the PR sits in its stack, any
-deviation from the plan, a file-level table of what changes, a reading order, a worked example, and
-the browser evidence. The body links it from its first line. This step runs after Step 9.5 so the
-guide can embed the same screenshots and diagram.
-
-**Full procedure lives in [`rules/review-guide.md`](./rules/review-guide.md).** Load it when
-entering this step. In outline:
-
-| Sub-step | Does |
-| --- | --- |
-| G0 | Check the preconditions: not `--no-review-guide`, not split mode, an artifact tool, a GitHub path |
-| G1 | Write a guide only when the diff matches R1–R4: 8+ source files, 300+ source lines, a stacked PR, or a Step 9.5 diagram. `--review-guide` forces one |
-| G2 | Gather the inputs: diff, plan, stack, tests, Step 9.5 images, an earlier guide URL |
-| G3 | Write the page after loading `artifact-design`, with the fixed section order and its include-when rules |
-| G4 | Publish, updating the earlier guide's URL on a re-run |
-| G5 | Write one `<!-- review-guide:v1 -->` link region as the first lines of the body |
-| G6 | Tell the user to share the artifact with their organization. It is private when published |
-| G7 | Record the `Review guide` line for Step 10 |
-
-The guide never replaces the body and never changes a verdict.
-
 ## Step 10: Report
 
 Short summary:
 
 - Final check status (all green, or which are red and why)
 - What was auto-fixed, one line per fix
-- Anything left for the user (only if Step 9 escalated or hit the cap, or Step 9.6 published a guide that still needs sharing)
+- Anything left for the user (only if Step 9 escalated or hit the cap)
 
 **Unless `--no-feedback` was passed**, also wait for the background external-reviewer-feedback loop (Step 6.7) to complete — you will be notified — and append its result. Final report shape:
 
 ```
 PR: <pr-url>
 Title: <imperative title>
+
+Test in preview (contract Step 3b): <written (UI only) | written (preview runs <components>: <evidence>) | skipped (no UI files and no preview evidence) | skipped (<non-UI file> not in preview) | skipped (no manual check beyond the unit tests)>
 
 Pre-push review (Step 5.5, review-branch): <converged (<N> iterations, <A> applied, <D> declined) | flagged (<G> findings) | cap-reached (<O> open) | checks-red (<checks>) | skipped (<flag>) | skipped (non-code diff) | NOT REVIEWED (sub-agent dispatch unavailable; fallback: <polish simplify | none>)>
 
@@ -444,8 +420,6 @@ CI:
 
 Visuals (Step 9.5): <the V5 line from rules/pr-visuals.md>
 
-Review guide (Step 9.6): <the G7 line from rules/review-guide.md>
-
 External reviewer feedback loop (/implement-suggestion --watch):
   Stop reason: <reviewers quiet | nothing actionable left | iteration cap | skipped (--no-feedback)>
   Iterations: <N>
@@ -464,7 +438,7 @@ State which of the six outcomes applied, and never omit the line on the grounds 
 
 **The `Visuals` line is mandatory on every run**, including a non-UI diff with no diagram. `screenshots none (no ui-verify spec: not authored (no UI files in diff)); diagram skipped (no D1–D4 match); not attached (nothing to attach)` is the informative answer there.
 
-**The `Review guide` line is mandatory on every run.** `skipped (no R1–R4 match)` is the informative answer for a small PR. When a guide was published, the share reminder from G6 is a needs-you item: list it under "Anything left for the user".
+**The `Test in preview` line is mandatory on every run.** `skipped (no UI files and no preview evidence)` is the informative answer for a backend-only PR.
 
 **The `Pre-push review` line is mandatory on every run too**, including every run where the step was skipped.
 A named skip tells the reader the pass exists and why it did not run; omitting the line tells them nothing and reads identically to a run that took it.

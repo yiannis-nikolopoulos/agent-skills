@@ -45,8 +45,17 @@ Agent0 emits the same dashboard several times as it iterates, each as its own ca
 
 ## How to verify
 
-Generate a dashboard in the preview, ask Agent0 to refine it, and check that one card shows `v{N}`.
+`pnpm exec vitest run src/agent0` in `components/ui`.
+
+## Test in preview
+
+1. Enable **USE_AGENT0_SDK** and open **Agent0**.
+2. Ask for a dashboard, then ask Agent0 to refine it.
+3. One card shows the latest version; **Create** lists both revisions.
 ```
+
+The diff is UI only, so contract Step 3b writes the `Test in preview` section. The manual scenario
+moves there, and `How to verify` keeps the test command.
 
 ## Good — bug fix
 

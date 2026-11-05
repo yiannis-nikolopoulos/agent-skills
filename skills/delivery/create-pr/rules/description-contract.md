@@ -33,14 +33,14 @@ A reviewer should read the entire description in **under 30 seconds**. The budge
 - **What changed: 2–4 bullets, ≤ 20 words each.** No sub-bullets, no code blocks inside bullets.
 - **How to verify: one line.** One command or one scenario.
 - **Notes for reviewers: optional, ≤ 2 items, ≤ 25 words each.** Only a risk, a judgment call the reviewer must make, or a known gap with its ticket link.
+- **Test in preview: only when [Step 3b](#step-3b-decide-on-a-test-in-preview-section) says so. 2–5 numbered steps, ≤ 15 words each, ≤ 60 words in total.** It has its own budget and does not count toward the body's.
 
 If you can't fit the change inside this budget, the PR is probably too big — stop and offer the user `/create-pr --split` instead of expanding the description.
 
-**Three regions are exempt.** Content between these markers does **not** count toward the ≤ 120 / 200 budget:
+**Two regions are exempt.** Content between these markers does **not** count toward the ≤ 120 / 200 budget:
 
 - the UI verification spec block, `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` (see [UI verification spec](#ui-verification-spec-optional)). It is collapsed and machine-oriented, not reviewer-facing prose.
 - the visuals region, `<!-- pr-visuals:v1 -->` … `<!-- /pr-visuals:v1 -->` (see [PR visuals region](#pr-visuals-region-optional)). It holds images, not prose.
-- the review guide link, `<!-- review-guide:v1 -->` … `<!-- /review-guide:v1 -->` (see [Review guide link](#review-guide-link-optional)). It holds one link.
 
 ## Core principles
 
@@ -108,7 +108,7 @@ If you can't answer these from the diff alone, ask the user — don't pad the de
 
 ## Step 3: Choose output format
 
-**Branch A — Repository has a PR template:** Use it. Fill each section with the *narrative* version (short, focused, no filler). The word budget applies to the template's prose too; a template table of links (preview, feature flag) does not count. Leave optional sections empty rather than padding with `N/A` boilerplate. Keep checkbox lists if the template has them, but only check what genuinely applies.
+**Branch A — Repository has a PR template:** Use it. Fill each section with the *narrative* version (short, focused, no filler). The word budget applies to the template's prose too; a template table of links (preview, feature flag) does not count. Leave optional sections empty rather than padding with `N/A` boilerplate. Keep checkbox lists if the template has them, but only check what genuinely applies. When Step 3b says to write a `## Test in preview` section and the template has no testing section, add it after the template's last section.
 
 **Branch B — No PR template:** Use the lean default below. Do not invent extra sections.
 
@@ -131,6 +131,12 @@ One worked example of each branch — plus a bug fix and a **bad** verbose one t
 
 [One test command or one scenario.]
 
+## Test in preview
+
+1. [Only when Step 3b says to write it. Where to start, ≤ 15 words.]
+2. [What to do, ≤ 15 words.]
+3. [What the reviewer should see, ≤ 15 words.]
+
 ## Notes for reviewers
 
 - [Optional, ≤ 2 items, ≤ 25 words each. Skip the section if there's nothing load-bearing to flag.]
@@ -139,6 +145,74 @@ One worked example of each branch — plus a bug fix and a **bad** verbose one t
 Follow-up work goes in a ticket. Link it from a note; never list it in the body.
 
 Aim for **2–4 bullets** under "What changed". If you have 6+, the PR is too big or you're enumerating files instead of concepts.
+
+## Step 3b: Decide on a "Test in preview" section
+
+Write a `## Test in preview` section when the PR is UI only, or when its preview deployment runs every
+changed component. Decide mechanically with `ui-verify`'s classifier over every changed file:
+
+```bash
+FILES=$(git diff --name-only origin/<base>...HEAD | paste -sd, -)
+node <ui-verify-skill-dir>/scripts/is-ui-diff.mjs --files "$FILES" [--surface-json '<surface>']
+```
+
+`<ui-verify-skill-dir>` is the directory holding `ui-verify`'s `SKILL.md`, e.g.
+`~/.claude/skills/ui-verify`. Pass the same `--surface-json` that `ui-verify` uses when LoreKit holds
+one. The JSON's `matched` array lists the UI files. A **neutral** file is a test, a doc (`*.md`), a
+translation file, or a lockfile. Take the first row that matches:
+
+| # | Condition | Record | Write the section |
+| - | --- | --- | --- |
+| 1 | The script exits 2 | `skipped (classifier error: <stderr line>)` | No |
+| 2 | `UI_DIFF: no`, and no changed file has preview evidence (below) | `skipped (no UI files and no preview evidence)` | No |
+| 3 | `UI_DIFF: yes`, and every changed file is in `matched` or is neutral | `written (UI only)` | Yes |
+| 4 | Every other changed file has preview evidence | `written (preview runs <components>: <evidence>)` | Yes |
+| 5 | Otherwise | `skipped (<first file without evidence> not in preview)` | No |
+
+**Preview evidence** for a non-UI file is one of these, read from the repository, never inferred from a
+component's name:
+
+- a workflow in `.github/workflows/` triggered on `pull_request` that builds that file's component and deploys it to a per-PR environment;
+- a preview deployment config whose root contains the file, such as a `vercel.json` or `.claude/aw-targets/preview.yml` naming that component;
+- repository docs stating that per-PR previews run that component.
+
+A UI preview that calls a shared backend does **not** run the backend: a backend file in that repo is
+row 5.
+
+After rows 3 and 4, skip anyway when a person cannot see or trigger the change in the preview, such as
+a refactor with no visible effect. Record `skipped (no manual check beyond the unit tests)`.
+
+Write the section to these rules:
+
+- Place it after `## How to verify`, or after the template's last section.
+- Write 2–5 numbered steps, ≤ 15 words each.
+- In step 1, name the page or route to open, plus any feature flag, organization or data the check needs. Never write a preview URL; the deployment posts it.
+- Name controls by their visible label, in bold.
+- End with the result the reviewer should see.
+- No code identifiers, selectors or commands. The machine-run checks belong in the `ui-verify` spec.
+- Do not repeat the steps in `## How to verify`. That section keeps the automated test command.
+
+Correct:
+
+```markdown
+## Test in preview
+
+1. Open **Alerting → Failed checks** and pick a check silenced before its rule changed.
+2. Open the sidebar.
+3. **Silenced by** lists the older silence.
+```
+
+Wrong: a URL that is not known yet, a selector, and no expected result.
+
+```markdown
+## Test in preview
+
+1. Go to https://preview-1234.example.com/alerting and click `[data-testid=fc-row]`.
+2. Test the sidebar.
+```
+
+**On refresh (the `review-loop` case):** re-run this step on the converged diff. Edit the steps only
+when the behaviour they check changed. Remove the section when the gate now says skip.
 
 ## UI verification spec (optional)
 
@@ -163,16 +237,6 @@ It sits immediately before the body's second `## ` heading.
 - **It is exempt from the length budget** (see above).
 - **On refresh, carry the whole region forward unchanged**, at the same position. If a refresh drops it, the uploaded images are lost from the PR.
 
-## Review guide link (optional)
-
-`create-pr` Step 9.6 can publish a review guide for a large or stacked PR and link it from the body,
-inside one region delimited by `<!-- review-guide:v1 -->` … `<!-- /review-guide:v1 -->`. There is at
-most one per PR. It is the first region of the body.
-
-- **Author it only through [`review-guide.md`](./review-guide.md).** The URL points at a published artifact that cannot be recreated from the diff.
-- **It is exempt from the length budget** (see above).
-- **On refresh, carry the whole region forward unchanged**, as the first lines of the body. The body must still stand alone: never shorten it on the grounds that the guide covers the detail.
-
 ## Step 4: Write the title
 
 - Imperative mood, specific, under ~70 chars.
@@ -182,14 +246,15 @@ most one per PR. It is the first region of the body.
 
 ## Step 5: Length self-check (before writing the body)
 
-Count the words, **skipping headings and any `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->`, `<!-- pr-visuals:v1 -->` … `<!-- /pr-visuals:v1 -->` or `<!-- review-guide:v1 -->` … `<!-- /review-guide:v1 -->` region**. All three are exempt (see [Length budget](#length-budget--the-hard-rule)). Count mechanically; do not estimate:
+Count the words, **skipping headings, any `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` or `<!-- pr-visuals:v1 -->` … `<!-- /pr-visuals:v1 -->` region, and the `## Test in preview` section**, which has its own budget (see [Length budget](#length-budget--the-hard-rule)). Count mechanically; do not estimate:
 
 ```bash
-perl -0pe 's/<!-- (ui-verify|pr-visuals|review-guide):v1 -->.*?<!-- \/\1:v1 -->//sg; s/^#+ .*$//mg' body.md | wc -w
+perl -0pe 's/<!-- (ui-verify|pr-visuals):v1 -->.*?<!-- \/\1:v1 -->//sg; s/^## Test in preview\n.*?(?=^## |\z)//msg; s/^#+ .*$//mg' body.md | wc -w
+perl -0ne 'print $1 if /^## Test in preview\n(.*?)(?=^## |\z)/ms' body.md | wc -w   # ≤ 60
 awk '/^[-*] |^[0-9]+\. /{ if (NF-1 > 20) print NF-1 ": " $0 }' body.md   # bullets over 20 words
 ```
 
-If the body is over 120 words, or any bullet is over 20, cut. Common cuts:
+If the body is over 120 words, the Test in preview section is over 60, or any bullet is over 20, cut. Common cuts:
 
 - **Collapse "Notes for reviewers"** unless it flags a real risk or judgment call. "We chose X because Y" usually belongs in a code comment.
 - **Drop "internal narration"** — explanations of memo deps, useEffect timing, and other implementation detail that a reviewer will read in the diff anyway.
