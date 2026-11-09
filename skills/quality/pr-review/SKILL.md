@@ -3,7 +3,8 @@ name: pr-review
 description: >
   One-shot read-only review of a GitHub PR — dispatches the `pr-reviewer` agent with
   `--no-post` and reports its verdict and proposed comments without touching your code
-  or writing anything to GitHub; you decide what gets posted. The short entry point
+  or writing anything to GitHub; you decide what gets posted. Ends with manual steps to
+  test the change in the PR's preview deployment when the preview runs it. The short entry point
   for "review this PR" when you do not want an apply-and-converge loop. Also writes
   maintainer relevance rules via `/pr-review remember <fact>`. Invoke with /pr-review.
 disable-model-invocation: true
@@ -11,7 +12,7 @@ argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--with a,
 license: MIT
 metadata:
   author: mthines
-  version: '1.2.0'
+  version: '1.3.0'
   workflow_type: command
 ---
 
@@ -33,6 +34,7 @@ PR carries nothing you did not choose to post.
 - [Step 1: Resolve the PR](#step-1-resolve-the-pr)
 - [Step 2: Dispatch the agent](#step-2-dispatch-the-agent)
 - [Step 3: Report](#step-3-report)
+- [Step 4: Test in preview](#step-4-test-in-preview)
 - [`remember` — write a maintainer relevance rule](#remember--write-a-maintainer-relevance-rule)
 - [Which review command do I want?](#which-review-command-do-i-want)
 - [Hard rules](#hard-rules)
@@ -162,7 +164,12 @@ Proposed comments:
 
 Full report: <NO_POST_DIR>/report.md
 Comment bodies + anchors: <NO_POST_DIR>/inline-comments.json
+
+Test in preview: <the Step 4 steps, or one "skipped (<reason>)" line>
 ```
+
+The `Test in preview` block is always the last part of the summary.
+[Step 4](#step-4-test-in-preview) owns its content.
 
 List **every** proposed comment, numbered, blocking ones first, so the user can say "post 1 and 3"
 by number. Surface **non-passing gates prominently** — this summary is the only place the result
@@ -180,6 +187,84 @@ Report the verdict **as returned**. Do not soften a `FAIL` because the findings 
 and do not upgrade a `PASS` because the diff looks risky: the gates and the verifier already made
 that call with evidence, and re-adjudicating it here would make two disagreeing verdicts for one
 run.
+
+## Step 4: Test in preview
+
+End the summary with numbered steps a person can follow to check the change by hand in the PR's preview deployment.
+Write them only when the preview runs the changed code.
+This step reads the PR and writes to the terminal only.
+
+### 4a. Reuse the PR's own steps
+
+Read the PR body (`gh pr view <PR_REF> --json body`, or `mcp__github__pull_request_read` on the `mcp` path).
+When it has a `## Test in preview` section, print its steps verbatim and go to [4d](#4d-add-steps-for-visible-findings).
+The PR author already wrote and checked them, and a second set would give the reviewer two versions of one check.
+
+### 4b. Decide whether the preview runs the change
+
+Run the preview gate from `create-pr`: [description contract § Step 3b](../../delivery/create-pr/rules/description-contract.md#step-3b-decide-on-a-test-in-preview-section).
+That section owns the decision table, the classifier command, and what counts as preview evidence.
+Do not restate or change its rows here.
+Feed it the PR's changed files, not the local branch's:
+
+```bash
+FILES=$(gh pr diff <PR_REF> --name-only | paste -sd, -)
+node <ui-verify-skill-dir>/scripts/is-ui-diff.mjs --files "$FILES" [--surface-json '<surface>']
+```
+
+`<ui-verify-skill-dir>` is the directory that holds `ui-verify`'s `SKILL.md`, for example `~/.claude/skills/ui-verify`.
+Pass `--surface-json` exactly when the contract says to.
+
+Map the gate's outcome to this step:
+
+| Gate outcome | Do |
+| --- | --- |
+| `written (…)` | Go to [4c](#4c-write-the-steps). |
+| `skipped (<reason>)` | Print `Test in preview: skipped (<reason>)` and stop. |
+| `ui-verify` is not installed, so the classifier is missing | Print `Test in preview: skipped (preview gate unavailable: ui-verify not installed)` and stop. |
+
+Never guess "UI-only" from file names when the classifier is missing.
+A guessed `written` gives the reviewer steps for code the preview does not run.
+
+### 4c. Write the steps
+
+Follow the contract's writing rules for the section:
+
+- Write 2–5 numbered steps, ≤ 15 words each.
+- In step 1, name the page or route to open, plus any feature flag, organization, or data the check needs.
+- Never write a preview URL. The PR already shows the deployment link.
+- Name controls by their visible label, in bold.
+- End with the result the reviewer should see.
+- Write no code identifiers, selectors, or commands.
+
+Base the steps on the diff and the PR description.
+When the PR body has a `<!-- ui-verify:v1 -->` block, use its specs as the source for which pages and controls to name.
+
+```text
+✅ RIGHT
+Test in preview:
+1. Open Alerting → Failed checks and pick a check silenced before its rule changed.
+2. Open the sidebar.
+3. Silenced by lists the older silence.
+
+❌ WRONG — a guessed URL, a selector, and no expected result
+Test in preview:
+1. Go to https://preview-1234.example.com/alerting and click [data-testid=fc-row].
+2. Test the sidebar.
+```
+
+### 4d. Add steps for visible findings
+
+For each proposed comment whose defect a person can see in the preview, add one step that shows it.
+Name the comment by its number from the `Proposed comments` list, so the reviewer can confirm it before deciding to post.
+
+```text
+4. For comment 2: unsilence the check; the badge stays until you reload the page.
+```
+
+Add no step for a finding with no visible symptom, such as a missing test or a naming issue.
+These steps reproduce what the agent reported.
+They never add, drop, or re-rank a finding.
 
 ## `remember` — write a maintainer relevance rule
 
@@ -291,5 +376,6 @@ keeps the result off the PR: `--report` lets the agent post its sticky report an
 - **Absent sub-agent dispatch is a skip, not a fallback — and it is a CAPABILITY test, not a name test.** Conclude it only when no available tool dispatches a sub-agent under any name; the absence of `Task` alone is not evidence. Then never review in this context and label it a `pr-reviewer` review, and never retry the dispatch.
 - **Never validate the pass-through flags.** Forward the tail verbatim; the agent owns that grammar and rejects what it does not know.
 - **Never re-adjudicate the verdict.** Report `PASS` / `WARN` / `FAIL` as returned, with the blocking findings named.
+- **Test-in-preview steps come from the `create-pr` preview gate, never a guess.** Reuse the PR's own `## Test in preview` steps when it has them; print a `skipped (<reason>)` line when the gate says skip or cannot run.
 - **`remember` writes an `fp`-keyed rule or asks.** A prose-slug key is unreadable by the read path and must never be invented to make a write appear to succeed.
 - **`remember` cannot suppress a `standards` or `(blocking)` finding.** Refuse and name the reason; those exemptions belong to [`memory.md`](../../../agents/pr-reviewer/rules/memory.md#two-findings-memory-may-never-suppress) and this command only restates them.
