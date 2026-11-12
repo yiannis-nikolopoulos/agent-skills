@@ -126,6 +126,7 @@ Plumbing for shipping code.
 | **[/resolve-conflicts](./skills/delivery/resolve-conflicts/SKILL.md)** | Detects merge/rebase conflicts, shows both sides with context, proposes resolutions, asks for ambiguous cases. | `/` |
 | **[/changelog](./skills/delivery/changelog/SKILL.md)** | Generates a personal markdown changelog of merged PRs and closed Linear tickets over a configurable window (default 7 days). | `/` |
 | **[/github-actions-author](./skills/delivery/github-actions-author/SKILL.md)** | Authors and reviews fast, cheap, maintainable GitHub Actions workflows (2026 best practices). Modes: `scaffold`, `review`. | `/` |
+| **[narrated-walkthrough](./skills/delivery/narrated-walkthrough/SKILL.md)** | Produces a narrated walkthrough video (1080p MP4 with voiceover and subtitles) of a real web app flow: Playwright drives the UI from a step script, Kokoro or macOS `say` voices each step offline, and every line lands where its step really happens on screen. | `auto` |
 
 ### `testing/` — E2E and fixture tooling
 

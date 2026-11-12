@@ -1,0 +1,47 @@
+{
+  "title": "Silencing many checks at once",
+  "baseUrl": "http://localhost:3000",
+  "storageState": "auth-state.json",
+  "viewport": { "width": 1280, "height": 720 },
+  "scale": 1.5,
+  "voice": "af_heart",
+  "setup": [
+    { "goto": "/alerting/failed-checks" },
+    { "waitFor": "role=table" }
+  ],
+  "steps": [
+    {
+      "id": "intro",
+      "say": ["When a deploy trips many checks at once, silencing them one by one takes minutes."],
+      "do": [{ "highlight": "role=table", "ms": 2000 }]
+    },
+    {
+      "id": "select",
+      "say": ["Select the checks you want to silence."],
+      "do": [
+        { "click": "role=checkbox[name=\"Select row\"]", "nth": 0 },
+        { "click": "role=checkbox[name=\"Select row\"]", "nth": 1 }
+      ]
+    },
+    {
+      "id": "open",
+      "say": ["Then choose Add to silence."],
+      "do": [
+        { "click": "role=button[name=\"Add to silence\"]" },
+        { "waitFor": "role=dialog" }
+      ]
+    },
+    {
+      "id": "confirm",
+      "say": [
+        { "text": "Pick a duration and confirm; Dash0 silences them together.", "speak": "Pick a duration and confirm. Dash zero silences them together." }
+      ],
+      "do": [
+        { "click": "role=combobox[name=\"Duration\"]" },
+        { "click": "role=option[name=\"2 hours\"]" },
+        { "click": "role=button[name=\"Silence\"]" },
+        { "waitFor": "role=dialog", "state": "hidden" }
+      ]
+    }
+  ]
+}
